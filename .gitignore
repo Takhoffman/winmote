@@ -1,0 +1,37 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Rider/VS
+.idea/
+.vs/
+*.sln.iml
+
+# VS Code
+.vscode/
+
+# OS
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Logs
+*.log
+
+# Local/secret config
+.claude/settings.local.json
+
+# Publish output
+publish/
+
+# Temp
+*.tmp
+*.temp
+
+# Winmote artifacts (optional)
+winmote.exe
+
