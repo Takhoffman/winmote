@@ -13,6 +13,8 @@ echo Usage: winmote.bat install ^| update ^| build
 exit /b 1
 
 :install
+call :ensure_dotnet
+if errorlevel 1 exit /b 1
 call :build
 if errorlevel 1 exit /b 1
 call :copy
@@ -25,6 +27,8 @@ echo Winmote installed. Restart your terminal to use "winmote".
 exit /b 0
 
 :update
+call :ensure_dotnet
+if errorlevel 1 exit /b 1
 call :build
 if errorlevel 1 exit /b 1
 call :copy
@@ -42,6 +46,37 @@ if not exist ".\winmote" (
 )
 dotnet build .\winmote -c Release
 exit /b %errorlevel%
+
+:ensure_dotnet
+where dotnet >nul 2>&1
+if errorlevel 1 goto :install_dotnet
+for /f "delims=" %%A in ('dotnet --list-sdks 2^>nul ^| findstr /R /C:"^9\.0\."') do set HAS_SDK=1
+if defined HAS_SDK exit /b 0
+goto :install_dotnet
+
+:install_dotnet
+echo .NET 9 SDK not found. Installing...
+where winget >nul 2>&1
+if not errorlevel 1 (
+  winget install -e --id Microsoft.DotNet.SDK.9 --accept-package-agreements --accept-source-agreements
+  if errorlevel 1 (
+    echo ERROR: winget failed to install .NET 9 SDK.
+    exit /b 1
+  )
+  exit /b 0
+)
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$ErrorActionPreference='Stop';" ^
+  "$i=$env:TEMP+'\\dotnet-install.ps1';" ^
+  "Invoke-WebRequest https://dot.net/v1/dotnet-install.ps1 -OutFile $i;" ^
+  "& $i -Channel 9.0 -Quality GA;" ^
+  "Remove-Item $i -Force"
+if errorlevel 1 (
+  echo ERROR: dotnet-install failed. Install .NET 9 SDK manually and re-run.
+  exit /b 1
+)
+set "PATH=%LOCALAPPDATA%\Microsoft\dotnet;%PATH%"
+exit /b 0
 
 :copy
 set TARGET=C:\Program Files\Winmote
