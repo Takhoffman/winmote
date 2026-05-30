@@ -39,13 +39,18 @@ Windows / Desktop
 - `desktop move-window --hwnd <handle>|--title-contains <text> --index <n>|--id <guid>` — move window.
 
 Mouse / Keyboard
-- `mouse move --x <n> --y <n> [--mode abs|rel] [--human true|false]` — move cursor.
-- `mouse click --x <n> --y <n> [--button left|right|middle]` — click.
+- `mouse move --x <n> --y <n> [--mode abs|rel] [--input-mode physical|ghost] [--agent <name>] [--human true|false]` — move the physical cursor or preview a labeled ghost cursor.
+- `mouse click --x <n> --y <n> [--button left|right|middle] [--input-mode physical|message|auto|ghost] [--agent <name>]` — click; `message` sends a window message without moving the physical cursor, `ghost` only previews.
 - `mouse down --x <n> --y <n> [--button left|right|middle]` — button down.
 - `mouse up --x <n> --y <n> [--button left|right|middle]` — button up.
 - `mouse drag --from x,y --to x,y [--button left|right|middle]` — drag.
 - `mouse wheel --x <n> --y <n> --delta <n>` — scroll.
 - `mouse pos` — get cursor position.
+- `overlay show --x <n> --y <n> [--duration-ms <n>] [--pulse true|false] [--agent <name>]` — show a click-through labeled ghost cursor without sending input.
+- `overlay update --agent <name> --x <n> --y <n> [--display <n>] [--app <name>] [--window <title>] [--pulse true|false]` — persist an agent cursor in Control Plane overlay state.
+- `overlay list [--agent <name>]` — list active overlay cursors.
+- `overlay clear [--agent <name>]` — clear one or all overlay cursors.
+- `overlay render [--duration-ms <n>]` — render active overlay cursors from Control Plane state.
 - `key tap --key CTRL --key L | --keys CTRL,L` — hotkey chord.
 - `key down --key SHIFT` — key down.
 - `key up --key SHIFT` — key up.
@@ -103,6 +108,16 @@ UWP / DPI / Tasks / Human
 - `profile list` — list humanization profiles.
 - `profile get` — show current humanization config.
 - `profile set --profile <name> [--seed <n>]` — set profile.
+
+Control Plane / Coordinator
+- `coordinator status` — show local Control Plane state paths and counts.
+- `session create --agent <name> [--display <n>] [--name <label>]` — create or refresh an agent session.
+- `session list` — list known agent sessions.
+- `lease acquire --agent <name> --resource <display:n|window:hwnd|physical_cursor|keyboard_focus|clipboard> [--mode observe|semantic|message|physical] [--ttl-ms <n>]` — acquire a time-limited resource lease.
+- `lease list [--agent <name>] [--resource <resource>]` — list active leases.
+- `history list [--limit <n>] [--agent <name>]` — list recent Control Plane actions.
+- `action submit --agent <name> --type click --x <n> --y <n> [--input-mode ghost|message|auto|physical] [--dry-run true|false]` — submit a coordinated click intent; dry-run is default.
+- MCP tool calls that require an agent default to `WINMOTE_AGENT`, `CODEX_AGENT_NAME`, `CODEX_SESSION_ID`, or `Codex` in that order.
 
 ## When adding commands
 -

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "winmote": {
+      "type": "stdio",
+      "command": "winmote-mcp.cmd",
+      "args": [],
+      "startup_timeout_sec": 10,
+      "tool_timeout_sec": 30,
+      "default_tools_approval_mode": "prompt"
+    }
+  }
+}

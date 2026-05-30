@@ -56,6 +56,11 @@ public static class Program
         ["mouse_drag"] = "mouse drag",
         ["mouse_wheel"] = "mouse wheel",
         ["mouse_pos"] = "mouse pos",
+        ["overlay_show"] = "overlay show",
+        ["overlay_update"] = "overlay update",
+        ["overlay_list"] = "overlay list",
+        ["overlay_clear"] = "overlay clear",
+        ["overlay_render"] = "overlay render",
         ["key_tap"] = "key tap",
         ["key_down"] = "key down",
         ["key_up"] = "key up",
@@ -118,7 +123,14 @@ public static class Program
         ["sleep"] = "time sleep",
         ["human_config_set"] = "profile set",
         ["human_config_get"] = "profile get",
-        ["human_profiles_list"] = "profile list"
+        ["human_profiles_list"] = "profile list",
+        ["coordinator_status"] = "coordinator status",
+        ["session_create"] = "session create",
+        ["session_list"] = "session list",
+        ["lease_acquire"] = "lease acquire",
+        ["lease_list"] = "lease list",
+        ["history_list"] = "history list",
+        ["action_submit"] = "action submit"
     };
 
     [STAThread]
@@ -130,6 +142,12 @@ public static class Program
         }
         catch
         {
+        }
+
+        if (args.Length > 0 && args[0].Equals("mcp", StringComparison.OrdinalIgnoreCase))
+        {
+            RunStdioLoop();
+            return 0;
         }
 
         if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
@@ -607,10 +625,10 @@ public static class Program
                 set.UnionWith(new[] { "type", "timeout-ms", "timeout_ms", "poll-ms", "poll_ms", "title-contains", "title_contains", "hwnd", "pattern", "rect", "display", "min-change", "min_change", "name", "automation-id", "automation_id", "control-type", "control_type", "class-name", "class_name", "nth", "language" });
                 return set;
             case "mouse_move":
-                set.UnionWith(new[] { "x", "y", "mode", "duration-ms", "duration_ms" });
+                set.UnionWith(new[] { "x", "y", "mode", "duration-ms", "duration_ms", "input-mode", "input_mode", "overlay-ms", "overlay_ms", "agent", "label" });
                 return set;
             case "mouse_click":
-                set.UnionWith(new[] { "x", "y", "button", "clicks" });
+                set.UnionWith(new[] { "x", "y", "button", "clicks", "input-mode", "input_mode", "overlay-ms", "overlay_ms", "agent", "label" });
                 return set;
             case "mouse_down":
             case "mouse_up":
@@ -621,6 +639,21 @@ public static class Program
                 return set;
             case "mouse_wheel":
                 set.UnionWith(new[] { "x", "y", "delta" });
+                return set;
+            case "overlay_show":
+                set.UnionWith(new[] { "x", "y", "duration-ms", "duration_ms", "pulse", "agent", "label" });
+                return set;
+            case "overlay_update":
+                set.UnionWith(new[] { "agent", "label", "x", "y", "display", "app", "window", "hwnd", "pulse", "ttl-ms", "ttl_ms" });
+                return set;
+            case "overlay_clear":
+                set.UnionWith(new[] { "agent" });
+                return set;
+            case "overlay_list":
+                set.UnionWith(new[] { "agent" });
+                return set;
+            case "overlay_render":
+                set.UnionWith(new[] { "duration-ms", "duration_ms" });
                 return set;
             case "key_tap":
             case "key_down":
@@ -736,6 +769,24 @@ public static class Program
             case "human_config_set":
                 set.UnionWith(new[] { "profile", "seed" });
                 return set;
+            case "coordinator_status":
+            case "session_list":
+                return set;
+            case "session_create":
+                set.UnionWith(new[] { "agent", "display", "name" });
+                return set;
+            case "lease_acquire":
+                set.UnionWith(new[] { "agent", "resource", "mode", "ttl-ms", "ttl_ms" });
+                return set;
+            case "lease_list":
+                set.UnionWith(new[] { "agent", "resource" });
+                return set;
+            case "history_list":
+                set.UnionWith(new[] { "limit", "agent" });
+                return set;
+            case "action_submit":
+                set.UnionWith(new[] { "agent", "type", "x", "y", "display", "hwnd", "input-mode", "input_mode", "dry-run", "dry_run" });
+                return set;
             default:
                 return null;
         }
@@ -758,9 +809,15 @@ public static class Program
             case "mouse_move":
             case "mouse_click":
             case "mouse_wheel":
+            case "overlay_show":
                 if (!flags.ContainsKey("x")) missing.Add("x");
                 if (!flags.ContainsKey("y")) missing.Add("y");
                 if (cmd.Equals("mouse_wheel", StringComparison.OrdinalIgnoreCase) && !flags.ContainsKey("delta")) missing.Add("delta");
+                break;
+            case "overlay_update":
+                if (!flags.ContainsKey("agent") && !flags.ContainsKey("label")) missing.Add("agent");
+                if (!flags.ContainsKey("x")) missing.Add("x");
+                if (!flags.ContainsKey("y")) missing.Add("y");
                 break;
             case "mouse_drag":
                 if (!flags.ContainsKey("from")) missing.Add("from");
@@ -870,6 +927,17 @@ public static class Program
                 break;
             case "sleep":
                 if (!flags.ContainsKey("ms")) missing.Add("ms");
+                break;
+            case "session_create":
+                if (!flags.ContainsKey("agent")) missing.Add("agent");
+                break;
+            case "lease_acquire":
+                if (!flags.ContainsKey("agent")) missing.Add("agent");
+                if (!flags.ContainsKey("resource")) missing.Add("resource");
+                break;
+            case "action_submit":
+                if (!flags.ContainsKey("agent")) missing.Add("agent");
+                if (!flags.ContainsKey("type")) missing.Add("type");
                 break;
         }
         return missing;
@@ -1041,12 +1109,45 @@ public static class Program
                 if (TryGetInt(flags, out var my, "y")) args["y"] = my;
                 if (TryGetString(flags, out var mode, "mode")) args["mode"] = mode;
                 if (TryGetInt(flags, out var dur, "duration-ms", "duration_ms")) args["duration_ms"] = dur;
+                if (TryGetString(flags, out var moveInputMode, "input-mode", "input_mode")) args["input_mode"] = moveInputMode;
+                if (TryGetInt(flags, out var moveOverlayMs, "overlay-ms", "overlay_ms")) args["overlay_ms"] = moveOverlayMs;
+                if (TryGetString(flags, out var moveLabel, "agent", "label")) args["label"] = moveLabel;
                 return args;
             case "mouse_click":
                 if (TryGetInt(flags, out var cx, "x")) args["x"] = cx;
                 if (TryGetInt(flags, out var cy, "y")) args["y"] = cy;
                 if (TryGetString(flags, out var button, "button")) args["button"] = button;
                 if (TryGetInt(flags, out var clicks, "clicks")) args["clicks"] = clicks;
+                if (TryGetString(flags, out var clickInputMode, "input-mode", "input_mode")) args["input_mode"] = clickInputMode;
+                if (TryGetInt(flags, out var clickOverlayMs, "overlay-ms", "overlay_ms")) args["overlay_ms"] = clickOverlayMs;
+                if (TryGetString(flags, out var clickLabel, "agent", "label")) args["label"] = clickLabel;
+                return args;
+            case "overlay_show":
+                if (TryGetInt(flags, out var ox, "x")) args["x"] = ox;
+                if (TryGetInt(flags, out var oy, "y")) args["y"] = oy;
+                if (TryGetInt(flags, out var overlayDuration, "duration-ms", "duration_ms")) args["duration_ms"] = overlayDuration;
+                if (TryGetBool(flags, "pulse") is bool pulse) args["pulse"] = pulse;
+                if (TryGetString(flags, out var overlayLabel, "agent", "label")) args["label"] = overlayLabel;
+                return args;
+            case "overlay_update":
+                if (TryGetString(flags, out var updateAgent, "agent", "label")) args["agent"] = updateAgent;
+                if (TryGetInt(flags, out var updateX, "x")) args["x"] = updateX;
+                if (TryGetInt(flags, out var updateY, "y")) args["y"] = updateY;
+                if (TryGetInt(flags, out var updateDisplay, "display")) args["display"] = updateDisplay;
+                if (TryGetString(flags, out var updateApp, "app")) args["app"] = updateApp;
+                if (TryGetString(flags, out var updateWindow, "window")) args["window"] = updateWindow;
+                if (TryGetString(flags, out var updateHwnd, "hwnd")) args["hwnd"] = updateHwnd;
+                if (TryGetBool(flags, "pulse") is bool updatePulse) args["pulse"] = updatePulse;
+                if (TryGetInt(flags, out var updateTtl, "ttl-ms", "ttl_ms")) args["ttl_ms"] = updateTtl;
+                return args;
+            case "overlay_clear":
+                if (TryGetString(flags, out var clearAgent, "agent")) args["agent"] = clearAgent;
+                return args;
+            case "overlay_list":
+                if (TryGetString(flags, out var listAgent, "agent")) args["agent"] = listAgent;
+                return args;
+            case "overlay_render":
+                if (TryGetInt(flags, out var renderDuration, "duration-ms", "duration_ms")) args["duration_ms"] = renderDuration;
                 return args;
             case "mouse_down":
             case "mouse_up":
@@ -1307,6 +1408,38 @@ public static class Program
                 return args;
             case "mouse_pos":
                 return args;
+            case "coordinator_status":
+            case "session_list":
+                return args;
+            case "session_create":
+                if (TryGetString(flags, out var sessionAgent, "agent")) args["agent"] = sessionAgent;
+                if (TryGetString(flags, out var sessionName, "name")) args["name"] = sessionName;
+                if (TryGetInt(flags, out var sessionDisplay, "display")) args["display"] = sessionDisplay;
+                return args;
+            case "lease_acquire":
+                if (TryGetString(flags, out var leaseAgent, "agent")) args["agent"] = leaseAgent;
+                if (TryGetString(flags, out var leaseResource, "resource")) args["resource"] = leaseResource;
+                if (TryGetString(flags, out var leaseMode, "mode")) args["mode"] = leaseMode;
+                if (TryGetInt(flags, out var leaseTtl, "ttl-ms", "ttl_ms")) args["ttl_ms"] = leaseTtl;
+                return args;
+            case "lease_list":
+                if (TryGetString(flags, out var leaseFilterAgent, "agent")) args["agent"] = leaseFilterAgent;
+                if (TryGetString(flags, out var leaseFilterResource, "resource")) args["resource"] = leaseFilterResource;
+                return args;
+            case "history_list":
+                if (TryGetInt(flags, out var historyLimit, "limit")) args["limit"] = historyLimit;
+                if (TryGetString(flags, out var historyAgent, "agent")) args["agent"] = historyAgent;
+                return args;
+            case "action_submit":
+                if (TryGetString(flags, out var actionAgent, "agent")) args["agent"] = actionAgent;
+                if (TryGetString(flags, out var actionType, "type")) args["type"] = actionType;
+                if (TryGetInt(flags, out var actionX, "x")) args["x"] = actionX;
+                if (TryGetInt(flags, out var actionY, "y")) args["y"] = actionY;
+                if (TryGetInt(flags, out var actionDisplay, "display")) args["display"] = actionDisplay;
+                if (TryGetString(flags, out var actionHwnd, "hwnd")) args["hwnd"] = actionHwnd;
+                if (TryGetString(flags, out var actionInputMode, "input-mode", "input_mode")) args["input_mode"] = actionInputMode;
+                if (TryGetBool(flags, "dry-run", "dry_run") is bool dryRun) args["dry_run"] = dryRun;
+                return args;
             default:
                 return args;
         }
@@ -1455,10 +1588,25 @@ public static class Program
                 Console.Error.WriteLine("note: use --max-w 0 to disable downscaling");
                 break;
             case "mouse_move":
-                WriteHelpLine("deskctl mouse_move --x <n> --y <n> [--mode abs|rel] [--duration-ms <n>] [--human true|false]");
+                WriteHelpLine("deskctl mouse_move --x <n> --y <n> [--mode abs|rel] [--duration-ms <n>] [--input-mode physical|ghost] [--agent <name>] [--human true|false]");
                 break;
             case "mouse_click":
-                WriteHelpLine("deskctl mouse_click --x <n> --y <n> [--button left|right|middle] [--clicks <n>] [--human true|false]");
+                WriteHelpLine("deskctl mouse_click --x <n> --y <n> [--button left|right|middle] [--clicks <n>] [--input-mode physical|message|auto|ghost] [--agent <name>] [--human true|false]");
+                break;
+            case "overlay_show":
+                WriteHelpLine("deskctl overlay_show --x <n> --y <n> [--duration-ms <n>] [--pulse true|false] [--agent <name>]");
+                break;
+            case "overlay_update":
+                WriteHelpLine("deskctl overlay update --agent <name> --x <n> --y <n> [--display <n>] [--app <name>] [--window <title>] [--pulse true|false]");
+                break;
+            case "overlay_list":
+                WriteHelpLine("deskctl overlay list [--agent <name>]");
+                break;
+            case "overlay_clear":
+                WriteHelpLine("deskctl overlay clear [--agent <name>]");
+                break;
+            case "overlay_render":
+                WriteHelpLine("deskctl overlay render [--duration-ms <n>]");
                 break;
             case "mouse_down":
                 WriteHelpLine("deskctl mouse_down --x <n> --y <n> [--button left|right|middle]");
@@ -1688,6 +1836,27 @@ public static class Program
             case "human_profiles_list":
                 WriteHelpLine("deskctl profile list");
                 break;
+            case "coordinator_status":
+                WriteHelpLine("deskctl coordinator status");
+                break;
+            case "session_create":
+                WriteHelpLine("deskctl session create --agent <name> [--display <n>] [--name <label>]");
+                break;
+            case "session_list":
+                WriteHelpLine("deskctl session list");
+                break;
+            case "lease_acquire":
+                WriteHelpLine("deskctl lease acquire --agent <name> --resource <display:n|window:hwnd|physical_cursor|keyboard_focus|clipboard> [--mode observe|semantic|message|physical] [--ttl-ms <n>]");
+                break;
+            case "lease_list":
+                WriteHelpLine("deskctl lease list [--agent <name>] [--resource <resource>]");
+                break;
+            case "history_list":
+                WriteHelpLine("deskctl history list [--limit <n>] [--agent <name>]");
+                break;
+            case "action_submit":
+                WriteHelpLine("deskctl action submit --agent <name> --type click --x <n> --y <n> [--input-mode ghost|message|auto|physical] [--dry-run true|false]");
+                break;
             default:
                 PrintUsage();
                 break;
@@ -1701,7 +1870,12 @@ public static class Program
             "help" => "deskctl help <noun> <verb>",
             "screenshot" => "deskctl screenshot [--display <n> | --rect x,y,w,h | --hwnd <handle>]",
             "mouse_move" => "deskctl mouse_move --x <n> --y <n> [--mode abs|rel]",
-            "mouse_click" => "deskctl mouse_click --x <n> --y <n> [--button left|right|middle] [--clicks <n>]",
+            "mouse_click" => "deskctl mouse_click --x <n> --y <n> [--button left|right|middle] [--clicks <n>] [--input-mode physical|message|auto|ghost] [--agent <name>]",
+            "overlay_show" => "deskctl overlay_show --x <n> --y <n> [--duration-ms <n>] [--agent <name>]",
+            "overlay_update" => "deskctl overlay update --agent <name> --x <n> --y <n>",
+            "overlay_clear" => "deskctl overlay clear [--agent <name>]",
+            "overlay_list" => "deskctl overlay list [--agent <name>]",
+            "overlay_render" => "deskctl overlay render [--duration-ms <n>]",
             "mouse_drag" => "deskctl mouse_drag --from x,y --to x,y [--button left|right|middle]",
             "mouse_wheel" => "deskctl mouse_wheel --x <n> --y <n> --delta <n>",
             "key_tap" => "deskctl key_tap --key CTRL --key L",
@@ -1712,6 +1886,11 @@ public static class Program
             "task_run" => "deskctl task_run --name <task>",
             "task_delete" => "deskctl task_delete --name <task>",
             "task_list" => "deskctl task_list [--name <task>]",
+            "coordinator_status" => "deskctl coordinator status",
+            "session_create" => "deskctl session create --agent <name> [--display <n>]",
+            "lease_acquire" => "deskctl lease acquire --agent <name> --resource <resource> [--mode observe|semantic|message|physical]",
+            "history_list" => "deskctl history list [--limit <n>]",
+            "action_submit" => "deskctl action submit --agent <name> --type click --x <n> --y <n>",
             _ => ""
         };
     }
@@ -1730,6 +1909,11 @@ public static class Program
             "wait_for" => new[] { "deskctl wait_for --type window_title_contains --title-contains \"Sign in\"", "deskctl wait_for --type screen_change --rect 0,0,300,200 --min-change 10" },
             "mouse_move" => new[] { "deskctl mouse_move --x 300 --y 400" },
             "mouse_click" => new[] { "deskctl mouse_click --x 300 --y 400" },
+            "overlay_show" => new[] { "deskctl overlay_show --x 300 --y 400 --duration-ms 600 --agent Codex" },
+            "overlay_update" => new[] { "deskctl overlay update --agent Codex --x 300 --y 400 --pulse true" },
+            "overlay_clear" => new[] { "deskctl overlay clear --agent Codex" },
+            "overlay_list" => new[] { "deskctl overlay list" },
+            "overlay_render" => new[] { "deskctl overlay render --duration-ms 1000" },
             "mouse_down" => new[] { "deskctl mouse_down --x 300 --y 400" },
             "mouse_up" => new[] { "deskctl mouse_up --x 300 --y 400" },
             "mouse_drag" => new[] { "deskctl mouse_drag --from 100,100 --to 400,400" },
@@ -1797,6 +1981,13 @@ public static class Program
             "human_config_set" => new[] { "deskctl profile set --profile human_fast" },
             "human_config_get" => new[] { "deskctl profile get" },
             "human_profiles_list" => new[] { "deskctl profile list" },
+            "coordinator_status" => new[] { "deskctl coordinator status" },
+            "session_create" => new[] { "deskctl session create --agent Codex --display 0" },
+            "session_list" => new[] { "deskctl session list" },
+            "lease_acquire" => new[] { "deskctl lease acquire --agent Codex --resource display:0 --mode message" },
+            "lease_list" => new[] { "deskctl lease list --agent Codex" },
+            "history_list" => new[] { "deskctl history list --limit 20" },
+            "action_submit" => new[] { "deskctl action submit --agent Codex --type click --x 300 --y 400 --input-mode ghost" },
             _ => Array.Empty<string>()
         };
     }
@@ -1821,7 +2012,7 @@ public static class Program
             return false;
         }
 
-        foreach (var key in new[] { "x", "y", "delta", "display", "max-w", "max_w", "max-h", "max_h", "quality", "grid-step", "grid_step", "duration-ms", "duration_ms", "clicks", "ms", "seed", "nth", "interval", "orientation", "size", "threshold", "width", "height", "timeout-ms", "timeout_ms", "poll-ms", "poll_ms", "min-change", "min_change" })
+        foreach (var key in new[] { "x", "y", "delta", "display", "max-w", "max_w", "max-h", "max_h", "quality", "grid-step", "grid_step", "duration-ms", "duration_ms", "overlay-ms", "overlay_ms", "clicks", "ms", "seed", "nth", "interval", "orientation", "size", "threshold", "width", "height", "timeout-ms", "timeout_ms", "poll-ms", "poll_ms", "min-change", "min_change", "ttl-ms", "ttl_ms", "limit" })
         {
             if (flags.TryGetValue(key, out var list))
             {
@@ -1836,7 +2027,7 @@ public static class Program
             }
         }
 
-        foreach (var key in new[] { "human", "include-cursor", "include_cursor", "grid", "grid-abs", "grid_abs", "visible-only", "visible_only", "enter", "open" })
+        foreach (var key in new[] { "human", "include-cursor", "include_cursor", "grid", "grid-abs", "grid_abs", "visible-only", "visible_only", "enter", "open", "pulse", "dry-run", "dry_run" })
         {
             if (flags.TryGetValue(key, out var list))
             {
@@ -1919,6 +2110,11 @@ public static class Program
             "mouse_drag",
             "mouse_wheel",
             "mouse_pos",
+            "overlay_show",
+            "overlay_update",
+            "overlay_list",
+            "overlay_clear",
+            "overlay_render",
             "key_tap",
             "key_down",
             "key_up",
@@ -1980,7 +2176,14 @@ public static class Program
             "sleep",
             "human_config_set",
             "human_config_get",
-            "human_profiles_list"
+            "human_profiles_list",
+            "coordinator_status",
+            "session_create",
+            "session_list",
+            "lease_acquire",
+            "lease_list",
+            "history_list",
+            "action_submit"
         };
     }
 
@@ -2526,9 +2729,15 @@ public static class Program
             yield break;
         }
 
-        if (obj is int or long or double or float or decimal)
+        if (obj is int or long or short or byte or uint or ulong or ushort or sbyte or double or float or decimal)
         {
             yield return new KeyValuePair<string, string>(prefix, Convert.ToString(obj) ?? "");
+            yield break;
+        }
+
+        if (obj is DateTime or DateTimeOffset or TimeSpan or Guid or Enum)
+        {
+            yield return new KeyValuePair<string, string>(prefix, obj.ToString() ?? "");
             yield break;
         }
 
@@ -2693,6 +2902,15 @@ public static class Program
                 "wheel" => "mouse_wheel",
                 "pos" => "mouse_pos",
                 "position" => "mouse_pos",
+                _ => null
+            },
+            "overlay" => verb switch
+            {
+                "show" => "overlay_show",
+                "update" => "overlay_update",
+                "list" => "overlay_list",
+                "clear" => "overlay_clear",
+                "render" => "overlay_render",
                 _ => null
             },
             "key" => verb switch
@@ -2883,6 +3101,33 @@ public static class Program
                 "list" => "human_profiles_list",
                 _ => null
             },
+            "coordinator" => verb switch
+            {
+                "status" => "coordinator_status",
+                _ => null
+            },
+            "session" => verb switch
+            {
+                "create" => "session_create",
+                "list" => "session_list",
+                _ => null
+            },
+            "lease" => verb switch
+            {
+                "acquire" => "lease_acquire",
+                "list" => "lease_list",
+                _ => null
+            },
+            "history" => verb switch
+            {
+                "list" => "history_list",
+                _ => null
+            },
+            "action" => verb switch
+            {
+                "submit" => "action_submit",
+                _ => null
+            },
             _ => null
         };
 
@@ -2996,10 +3241,22 @@ public static class Program
             {
                 continue;
             }
+            line = line.TrimStart('\uFEFF');
 
             Response resp;
             try
             {
+                using var doc = JsonDocument.Parse(line);
+                if (doc.RootElement.TryGetProperty("jsonrpc", out _) || doc.RootElement.TryGetProperty("method", out _))
+                {
+                    var mcpResponse = HandleMcpMessage(doc.RootElement);
+                    if (mcpResponse != null)
+                    {
+                        Console.WriteLine(JsonSerializer.Serialize(mcpResponse, JsonOptions));
+                    }
+                    continue;
+                }
+
                 var req = JsonSerializer.Deserialize<Request>(line, JsonOptions);
                 if (req == null || string.IsNullOrWhiteSpace(req.Cmd))
                 {
@@ -3017,6 +3274,146 @@ public static class Program
 
             Console.WriteLine(JsonSerializer.Serialize(resp, JsonOptions));
         }
+    }
+
+    private static object? HandleMcpMessage(JsonElement root)
+    {
+        var id = root.TryGetProperty("id", out var idEl) ? JsonElementToObject(idEl) : null;
+        var method = root.TryGetProperty("method", out var m) ? m.GetString() : null;
+        if (string.IsNullOrWhiteSpace(method))
+        {
+            return McpError(id, -32600, "missing method");
+        }
+
+        if (id == null && method.StartsWith("notifications/", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return method switch
+        {
+            "initialize" => new
+            {
+                jsonrpc = "2.0",
+                id,
+                result = new
+                {
+                    protocolVersion = "2024-11-05",
+                    capabilities = new { tools = new { listChanged = false } },
+                    serverInfo = new { name = "winmote", version = "0.1.0" }
+                }
+            },
+            "tools/list" => new
+            {
+                jsonrpc = "2.0",
+                id,
+                result = new
+                {
+                    tools = GetAllCommands().Where(c => c != "help").Select(c => new
+                    {
+                        name = c,
+                        description = $"Run winmote {c}.",
+                        inputSchema = new
+                        {
+                            type = "object",
+                            additionalProperties = true
+                        }
+                    }).ToArray()
+                }
+            },
+            "tools/call" => HandleMcpToolCall(id, root),
+            _ => McpError(id, -32601, $"unknown method '{method}'")
+        };
+    }
+
+    private static object HandleMcpToolCall(object? id, JsonElement root)
+    {
+        if (!root.TryGetProperty("params", out var p) || !p.TryGetProperty("name", out var nameEl))
+        {
+            return McpError(id, -32602, "tools/call requires params.name");
+        }
+
+        var name = nameEl.GetString();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return McpError(id, -32602, "tool name required");
+        }
+
+        JsonElement args = default;
+        if (p.TryGetProperty("arguments", out var a))
+        {
+            args = a;
+        }
+        args = ApplyMcpDefaults(name, args);
+
+        var resp = Dispatch(new Request { Id = id?.ToString(), Cmd = name, Args = args });
+        return new
+        {
+            jsonrpc = "2.0",
+            id,
+            result = new
+            {
+                content = new[]
+                {
+                    new
+                    {
+                        type = "text",
+                        text = JsonSerializer.Serialize(resp, JsonOptions)
+                    }
+                },
+                isError = !resp.Ok
+            }
+        };
+    }
+
+    private static JsonElement ApplyMcpDefaults(string command, JsonElement args)
+    {
+        if (!CoordinatorCommandNeedsAgent(command))
+        {
+            return args;
+        }
+
+        var dict = args.ValueKind == JsonValueKind.Object
+            ? JsonElementToObject(args) as Dictionary<string, object?>
+            : new Dictionary<string, object?>();
+        dict ??= new Dictionary<string, object?>();
+
+        if (!dict.ContainsKey("agent") || dict["agent"] == null || string.IsNullOrWhiteSpace(dict["agent"]?.ToString()))
+        {
+            dict["agent"] = GetDefaultMcpAgentName();
+        }
+
+        if (command == "session_create" && !dict.ContainsKey("display"))
+        {
+            dict["display"] = 0;
+        }
+
+        return JsonSerializer.SerializeToElement(dict, JsonOptions);
+    }
+
+    private static bool CoordinatorCommandNeedsAgent(string command)
+    {
+        return command is "session_create" or "lease_acquire" or "lease_list" or "history_list" or "action_submit" or "overlay_update" or "overlay_clear" or "overlay_list";
+    }
+
+    private static string GetDefaultMcpAgentName()
+    {
+        var env = Environment.GetEnvironmentVariable("WINMOTE_AGENT")
+            ?? Environment.GetEnvironmentVariable("CODEX_AGENT_NAME")
+            ?? Environment.GetEnvironmentVariable("CODEX_SESSION_ID")
+            ?? "Codex";
+        env = Regex.Replace(env.Trim(), @"\s+", "-");
+        return env.Length <= 32 ? env : env[..32];
+    }
+
+    private static object McpError(object? id, int code, string message)
+    {
+        return new
+        {
+            jsonrpc = "2.0",
+            id,
+            error = new { code, message }
+        };
     }
 
     private static Response Dispatch(Request req)
@@ -3039,6 +3436,11 @@ public static class Program
                 "mouse_wheel" => CmdMouseWheel(req.Args),
                 "mouse_down" => CmdMouseDown(req.Args),
                 "mouse_up" => CmdMouseUp(req.Args),
+                "overlay_show" => CmdOverlayShow(req.Args),
+                "overlay_update" => CmdOverlayUpdate(req.Args),
+                "overlay_list" => CmdOverlayList(req.Args),
+                "overlay_clear" => CmdOverlayClear(req.Args),
+                "overlay_render" => CmdOverlayRender(req.Args),
                 "key_tap" => CmdKeyTap(req.Args),
                 "key_down" => CmdKeyDown(req.Args),
                 "key_up" => CmdKeyUp(req.Args),
@@ -3103,6 +3505,13 @@ public static class Program
                 "human_config_set" => CmdHumanConfigSet(req.Args),
                 "human_config_get" => CmdHumanConfigGet(),
                 "human_profiles_list" => CmdHumanProfilesList(),
+                "coordinator_status" => CmdCoordinatorStatus(),
+                "session_create" => CmdSessionCreate(req.Args),
+                "session_list" => CmdSessionList(),
+                "lease_acquire" => CmdLeaseAcquire(req.Args),
+                "lease_list" => CmdLeaseList(req.Args),
+                "history_list" => CmdHistoryList(req.Args),
+                "action_submit" => CmdActionSubmit(req.Args),
                 _ => throw new DeskCtlException("INVALID_CMD", $"unknown cmd '{req.Cmd}'")
             };
 
@@ -3391,15 +3800,24 @@ public static class Program
         var mode = args.TryGetProperty("mode", out var m) ? m.GetString() : "abs";
         var x = args.GetProperty("x").GetInt32();
         var y = args.GetProperty("y").GetInt32();
+        var inputMode = GetInputMode(args, "physical");
+        var overlayMs = args.TryGetProperty("overlay_ms", out var om) ? om.GetInt32() : 350;
+        var label = GetOverlayLabel(args);
 
         var human = Humanization.ParseHuman(args);
         var start = Native.GetCursorPosition();
         var target = mode == "rel" ? new Point(start.X + x, start.Y + y) : new Point(x, y);
 
+        if (inputMode == "ghost")
+        {
+            GhostCursorOverlay.ShowAt(target, overlayMs, false, label);
+            return new { x = target.X, y = target.Y, durationMs = overlayMs, samples = 1, overshot = false, inputMode = "ghost", label };
+        }
+
         if (!human.Enabled)
         {
             Native.SetCursorPos(target.X, target.Y);
-            return new { x = target.X, y = target.Y, durationMs = 0, samples = 1, overshot = false };
+            return new { x = target.X, y = target.Y, durationMs = 0, samples = 1, overshot = false, inputMode = "physical" };
         }
 
         var moveResult = Humanization.HumanMouseMove(start, target, human, _humanConfig);
@@ -3409,7 +3827,8 @@ public static class Program
             y = moveResult.End.Y,
             durationMs = moveResult.DurationMs,
             samples = moveResult.Samples,
-            overshot = moveResult.Overshot
+            overshot = moveResult.Overshot,
+            inputMode = "physical"
         };
     }
 
@@ -3419,6 +3838,32 @@ public static class Program
         var y = args.GetProperty("y").GetInt32();
         var button = args.TryGetProperty("button", out var b) ? b.GetString() : "left";
         var clicks = args.TryGetProperty("clicks", out var c) ? c.GetInt32() : 1;
+        var inputMode = GetInputMode(args, "physical");
+        var overlayMs = args.TryGetProperty("overlay_ms", out var om) ? om.GetInt32() : 220;
+        var label = GetOverlayLabel(args);
+
+        if (inputMode is "ghost" or "message" or "auto")
+        {
+            GhostCursorOverlay.ShowAt(new Point(x, y), overlayMs, true, label);
+        }
+
+        if (inputMode is "ghost")
+        {
+            return new { clicked = false, x, y, button, inputMode = "ghost", note = "ghost mode only previews the target; no input was sent" };
+        }
+
+        if (inputMode is "message" or "auto")
+        {
+            if (TryWindowMessageClick(x, y, button, clicks, out var hwnd, out var error))
+            {
+                return new { clicked = true, x, y, button, clicks, inputMode = "message", hwnd = $"0x{hwnd.ToInt64():X}" };
+            }
+
+            if (inputMode == "message")
+            {
+                throw new DeskCtlException("INPUT_BACKEND_FAILED", error ?? "window message click failed");
+            }
+        }
 
         var human = Humanization.ParseHuman(args);
         Native.SetCursorPos(x, y);
@@ -3458,7 +3903,117 @@ public static class Program
             }
         }
 
-        return new { clicked = true, x, y, durationMs = totalMs, downMs };
+        return new { clicked = true, x, y, durationMs = totalMs, downMs, inputMode = "physical" };
+    }
+
+    private static object CmdOverlayShow(JsonElement args)
+    {
+        var x = args.GetProperty("x").GetInt32();
+        var y = args.GetProperty("y").GetInt32();
+        var durationMs = args.TryGetProperty("duration_ms", out var d) ? d.GetInt32() : 700;
+        var pulse = args.TryGetProperty("pulse", out var p) && p.GetBoolean();
+        var label = GetOverlayLabel(args);
+        GhostCursorOverlay.ShowAt(new Point(x, y), durationMs, pulse, label);
+        return new { shown = true, x, y, durationMs, pulse, label };
+    }
+
+    private static object CmdOverlayUpdate(JsonElement args)
+    {
+        var agent = args.TryGetProperty("agent", out var a) ? a.GetString() : GetOverlayLabel(args);
+        if (string.IsNullOrWhiteSpace(agent))
+        {
+            throw new DeskCtlException("INVALID_ARGS", "agent required");
+        }
+        var x = args.GetProperty("x").GetInt32();
+        var y = args.GetProperty("y").GetInt32();
+        var display = args.TryGetProperty("display", out var d) ? d.GetInt32() : 0;
+        var app = args.TryGetProperty("app", out var appEl) ? appEl.GetString() : null;
+        var window = args.TryGetProperty("window", out var winEl) ? winEl.GetString() : null;
+        var hwnd = args.TryGetProperty("hwnd", out var hwndEl) ? hwndEl.GetString() : null;
+        var pulse = args.TryGetProperty("pulse", out var p) && p.GetBoolean();
+        var ttlMs = args.TryGetProperty("ttl_ms", out var ttlEl) ? ttlEl.GetInt32() : 30000;
+        return CoordinatorStore.UpdateOverlay(agent, x, y, display, app, window, hwnd, pulse, ttlMs);
+    }
+
+    private static object CmdOverlayList(JsonElement args)
+    {
+        var agent = args.TryGetProperty("agent", out var a) ? a.GetString() : null;
+        return CoordinatorStore.ListOverlay(agent);
+    }
+
+    private static object CmdOverlayClear(JsonElement args)
+    {
+        var agent = args.TryGetProperty("agent", out var a) ? a.GetString() : null;
+        return CoordinatorStore.ClearOverlay(agent);
+    }
+
+    private static object CmdOverlayRender(JsonElement args)
+    {
+        var durationMs = args.TryGetProperty("duration_ms", out var d) ? d.GetInt32() : 1200;
+        var overlay = CoordinatorStore.GetActiveOverlayCursors();
+        GhostCursorOverlay.ShowMany(overlay, durationMs);
+        return new { shown = overlay.Count, durationMs };
+    }
+
+    private static string? GetOverlayLabel(JsonElement args)
+    {
+        if (!args.TryGetProperty("label", out var labelEl))
+        {
+            return null;
+        }
+
+        var label = labelEl.GetString();
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            return null;
+        }
+
+        label = label.Trim();
+        return label.Length <= 32 ? label : label[..32];
+    }
+
+    private static string GetInputMode(JsonElement args, string fallback)
+    {
+        var mode = args.TryGetProperty("input_mode", out var im) ? im.GetString() : fallback;
+        mode = string.IsNullOrWhiteSpace(mode) ? fallback : mode.Trim().ToLowerInvariant();
+        return mode is "physical" or "message" or "auto" or "ghost"
+            ? mode
+            : throw new DeskCtlException("INVALID_ARGS", "input_mode must be physical, message, auto, or ghost");
+    }
+
+    private static bool TryWindowMessageClick(int x, int y, string? button, int clicks, out IntPtr hwnd, out string? error)
+    {
+        error = null;
+        hwnd = Native.WindowFromPoint(new Native.POINT { X = x, Y = y });
+        if (hwnd == IntPtr.Zero)
+        {
+            error = "no window at target point";
+            return false;
+        }
+
+        var clientPoint = new Native.POINT { X = x, Y = y };
+        if (!Native.ScreenToClient(hwnd, ref clientPoint))
+        {
+            error = "failed to convert screen point to client coordinates";
+            return false;
+        }
+
+        var normalizedButton = string.IsNullOrWhiteSpace(button) ? "left" : button.Trim().ToLowerInvariant();
+        var downMsg = normalizedButton == "right" ? Native.WM_RBUTTONDOWN : Native.WM_LBUTTONDOWN;
+        var upMsg = normalizedButton == "right" ? Native.WM_RBUTTONUP : Native.WM_LBUTTONUP;
+        var wParam = normalizedButton == "right" ? new IntPtr(Native.MK_RBUTTON) : new IntPtr(Native.MK_LBUTTON);
+        var lParam = Native.MakeLParam(clientPoint.X, clientPoint.Y);
+
+        for (var i = 0; i < Math.Max(1, clicks); i++)
+        {
+            if (!Native.PostMessage(hwnd, downMsg, wParam, lParam) || !Native.PostMessage(hwnd, upMsg, IntPtr.Zero, lParam))
+            {
+                error = "PostMessage returned false";
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static object CmdMouseDrag(JsonElement args)
@@ -5070,6 +5625,103 @@ public static class Program
         return new { x = pt.X, y = pt.Y };
     }
 
+    private static object CmdCoordinatorStatus()
+    {
+        return CoordinatorStore.Status();
+    }
+
+    private static object CmdSessionCreate(JsonElement args)
+    {
+        var agent = args.GetProperty("agent").GetString();
+        if (string.IsNullOrWhiteSpace(agent))
+        {
+            throw new DeskCtlException("INVALID_ARGS", "agent required");
+        }
+        var name = args.TryGetProperty("name", out var n) ? n.GetString() : null;
+        var display = args.TryGetProperty("display", out var d) ? d.GetInt32() : 0;
+        return CoordinatorStore.CreateSession(agent, name, display);
+    }
+
+    private static object CmdSessionList()
+    {
+        return CoordinatorStore.ListSessions();
+    }
+
+    private static object CmdLeaseAcquire(JsonElement args)
+    {
+        var agent = args.GetProperty("agent").GetString();
+        var resource = args.GetProperty("resource").GetString();
+        if (string.IsNullOrWhiteSpace(agent) || string.IsNullOrWhiteSpace(resource))
+        {
+            throw new DeskCtlException("INVALID_ARGS", "agent and resource required");
+        }
+        var mode = args.TryGetProperty("mode", out var m) ? m.GetString() : "message";
+        var ttlMs = args.TryGetProperty("ttl_ms", out var t) ? t.GetInt32() : 30000;
+        return CoordinatorStore.AcquireLease(agent, resource, mode, ttlMs);
+    }
+
+    private static object CmdLeaseList(JsonElement args)
+    {
+        var agent = args.TryGetProperty("agent", out var a) ? a.GetString() : null;
+        var resource = args.TryGetProperty("resource", out var r) ? r.GetString() : null;
+        return CoordinatorStore.ListLeases(agent, resource);
+    }
+
+    private static object CmdHistoryList(JsonElement args)
+    {
+        var limit = args.TryGetProperty("limit", out var l) ? l.GetInt32() : 20;
+        var agent = args.TryGetProperty("agent", out var a) ? a.GetString() : null;
+        return CoordinatorStore.ListHistory(limit, agent);
+    }
+
+    private static object CmdActionSubmit(JsonElement args)
+    {
+        var agent = args.GetProperty("agent").GetString();
+        var type = args.GetProperty("type").GetString();
+        if (string.IsNullOrWhiteSpace(agent) || string.IsNullOrWhiteSpace(type))
+        {
+            throw new DeskCtlException("INVALID_ARGS", "agent and type required");
+        }
+
+        var dryRun = !args.TryGetProperty("dry_run", out var dr) || dr.GetBoolean();
+        var inputMode = args.TryGetProperty("input_mode", out var im) ? im.GetString() : "ghost";
+        object? execution = null;
+
+        if (type.Equals("click", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!args.TryGetProperty("x", out var xEl) || !args.TryGetProperty("y", out var yEl))
+            {
+                throw new DeskCtlException("INVALID_ARGS", "click action requires x and y");
+            }
+
+            var x = xEl.GetInt32();
+            var y = yEl.GetInt32();
+            CoordinatorStore.UpdateOverlay(agent, x, y, args.TryGetProperty("display", out var displayEl) ? displayEl.GetInt32() : 0, null, null, args.TryGetProperty("hwnd", out var hwndEl) ? hwndEl.GetString() : null, true, 30000);
+            if (!dryRun)
+            {
+                var clickArgs = JsonSerializer.SerializeToElement(new
+                {
+                    x,
+                    y,
+                    input_mode = inputMode,
+                    label = agent,
+                    human = new { enabled = true }
+                }, JsonOptions);
+                execution = CmdMouseClick(clickArgs);
+            }
+            else
+            {
+                execution = new { dryRun = true, inputMode, x, y };
+            }
+        }
+        else
+        {
+            throw new DeskCtlException("INVALID_ARGS", "only click action is implemented in the coordinator spine");
+        }
+
+        return CoordinatorStore.RecordAction(agent, type, inputMode, dryRun, execution);
+    }
+
     private static object CmdHumanConfigSet(JsonElement args)
     {
         _humanConfig = HumanConfig.FromJson(args, _humanConfig);
@@ -5100,6 +5752,403 @@ public sealed class Request
     [JsonPropertyName("id")] public string? Id { get; set; }
     [JsonPropertyName("cmd")] public string? Cmd { get; set; }
     [JsonPropertyName("args")] public JsonElement Args { get; set; }
+}
+
+public static class CoordinatorStore
+{
+    private static readonly object Gate = new();
+    private static readonly JsonSerializerOptions Options = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true
+    };
+
+    private static string DataDir => ResolveDataDir();
+    private static string StatePath => Path.Combine(DataDir, "coordinator-state.json");
+    private static string HistoryPath => Path.Combine(DataDir, "history.jsonl");
+
+    public static object Status()
+    {
+        lock (Gate)
+        {
+            var state = LoadState();
+            PruneExpiredLeases(state);
+            SaveState(state);
+            return new
+            {
+                controlPlane = "winmote",
+                coordinator = "local",
+                statePath = StatePath,
+                historyPath = HistoryPath,
+                sessions = state.Sessions.Count,
+                leases = state.Leases.Count,
+                activeLeases = state.Leases.Count(l => l.ExpiresAt > DateTimeOffset.Now),
+                overlayCursors = state.Overlay.Count,
+                updatedAt = state.UpdatedAt
+            };
+        }
+    }
+
+    public static object CreateSession(string agent, string? name, int display)
+    {
+        lock (Gate)
+        {
+            var state = LoadState();
+            var now = DateTimeOffset.Now;
+            var existing = state.Sessions.FirstOrDefault(s => s.Agent.Equals(agent, StringComparison.OrdinalIgnoreCase));
+            if (existing == null)
+            {
+                existing = new CoordinatorSession
+                {
+                    SessionId = $"session_{Guid.NewGuid():N}",
+                    Agent = agent,
+                    Name = string.IsNullOrWhiteSpace(name) ? agent : name.Trim(),
+                    Display = display,
+                    CreatedAt = now
+                };
+                state.Sessions.Add(existing);
+            }
+            existing.Name = string.IsNullOrWhiteSpace(name) ? existing.Name : name.Trim();
+            existing.Display = display;
+            existing.LastSeenAt = now;
+            TouchAndSave(state);
+            AppendHistory(new CoordinatorHistoryRecord
+            {
+                Agent = agent,
+                Action = "session.create",
+                Result = "ok",
+                Details = new Dictionary<string, object?> { ["session_id"] = existing.SessionId, ["display"] = display }
+            });
+            return new { session = existing };
+        }
+    }
+
+    public static object ListSessions()
+    {
+        lock (Gate)
+        {
+            var state = LoadState();
+            return new { sessions = state.Sessions.OrderBy(s => s.Agent, StringComparer.OrdinalIgnoreCase).ToList() };
+        }
+    }
+
+    public static object AcquireLease(string agent, string resource, string? mode, int ttlMs)
+    {
+        lock (Gate)
+        {
+            var state = LoadState();
+            PruneExpiredLeases(state);
+            mode = NormalizeLeaseMode(mode);
+            ttlMs = Math.Clamp(ttlMs, 1000, 300000);
+            var now = DateTimeOffset.Now;
+            var conflict = state.Leases.FirstOrDefault(l =>
+                l.ExpiresAt > now &&
+                l.Resource.Equals(resource, StringComparison.OrdinalIgnoreCase) &&
+                !l.Agent.Equals(agent, StringComparison.OrdinalIgnoreCase));
+            if (conflict != null)
+            {
+                throw new DeskCtlException("LEASE_CONFLICT", $"resource '{resource}' is leased by '{conflict.Agent}' until {conflict.ExpiresAt:o}");
+            }
+
+            var lease = state.Leases.FirstOrDefault(l =>
+                l.Resource.Equals(resource, StringComparison.OrdinalIgnoreCase) &&
+                l.Agent.Equals(agent, StringComparison.OrdinalIgnoreCase));
+            if (lease == null)
+            {
+                lease = new CoordinatorLease
+                {
+                    LeaseId = $"lease_{Guid.NewGuid():N}",
+                    Agent = agent,
+                    Resource = resource,
+                    CreatedAt = now
+                };
+                state.Leases.Add(lease);
+            }
+
+            lease.Mode = mode;
+            lease.ExpiresAt = now.AddMilliseconds(ttlMs);
+            TouchAndSave(state);
+            AppendHistory(new CoordinatorHistoryRecord
+            {
+                Agent = agent,
+                Action = "lease.acquire",
+                Resource = resource,
+                Mode = mode,
+                Result = "ok",
+                Details = new Dictionary<string, object?> { ["lease_id"] = lease.LeaseId, ["ttl_ms"] = ttlMs }
+            });
+            return new { lease };
+        }
+    }
+
+    public static object ListLeases(string? agent, string? resource)
+    {
+        lock (Gate)
+        {
+            var state = LoadState();
+            PruneExpiredLeases(state);
+            SaveState(state);
+            var leases = state.Leases.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(agent))
+            {
+                leases = leases.Where(l => l.Agent.Equals(agent, StringComparison.OrdinalIgnoreCase));
+            }
+            if (!string.IsNullOrWhiteSpace(resource))
+            {
+                leases = leases.Where(l => l.Resource.Equals(resource, StringComparison.OrdinalIgnoreCase));
+            }
+            return new { leases = leases.OrderBy(l => l.Resource, StringComparer.OrdinalIgnoreCase).ToList() };
+        }
+    }
+
+    public static object RecordAction(string agent, string type, string? inputMode, bool dryRun, object? execution)
+    {
+        var record = new CoordinatorHistoryRecord
+        {
+            Agent = agent,
+            Action = $"action.{type}",
+            Mode = inputMode,
+            Result = dryRun ? "dry_run" : "ok",
+            Details = execution
+        };
+        AppendHistory(record);
+        return new { accepted = true, dryRun, action = type, inputMode, execution };
+    }
+
+    public static object UpdateOverlay(string agent, int x, int y, int display, string? app, string? window, string? hwnd, bool pulse, int ttlMs)
+    {
+        lock (Gate)
+        {
+            var state = LoadState();
+            PruneExpiredOverlay(state);
+            ttlMs = Math.Clamp(ttlMs, 1000, 300000);
+            var cursor = state.Overlay.FirstOrDefault(o => o.Agent.Equals(agent, StringComparison.OrdinalIgnoreCase));
+            if (cursor == null)
+            {
+                cursor = new CoordinatorOverlayCursor { Agent = agent };
+                state.Overlay.Add(cursor);
+            }
+
+            cursor.Label = agent;
+            cursor.X = x;
+            cursor.Y = y;
+            cursor.Display = display;
+            cursor.App = app;
+            cursor.Window = window;
+            cursor.Hwnd = hwnd;
+            cursor.Pulse = pulse;
+            cursor.UpdatedAt = DateTimeOffset.Now;
+            cursor.ExpiresAt = cursor.UpdatedAt.AddMilliseconds(ttlMs);
+            TouchAndSave(state);
+            return new { cursor };
+        }
+    }
+
+    public static object ListOverlay(string? agent)
+    {
+        lock (Gate)
+        {
+            var state = LoadState();
+            PruneExpiredOverlay(state);
+            SaveState(state);
+            var cursors = state.Overlay.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(agent))
+            {
+                cursors = cursors.Where(c => c.Agent.Equals(agent, StringComparison.OrdinalIgnoreCase));
+            }
+            return new { cursors = cursors.OrderBy(c => c.Agent, StringComparer.OrdinalIgnoreCase).ToList() };
+        }
+    }
+
+    public static object ClearOverlay(string? agent)
+    {
+        lock (Gate)
+        {
+            var state = LoadState();
+            var removed = string.IsNullOrWhiteSpace(agent)
+                ? state.Overlay.Count
+                : state.Overlay.RemoveAll(c => c.Agent.Equals(agent, StringComparison.OrdinalIgnoreCase));
+            if (string.IsNullOrWhiteSpace(agent))
+            {
+                state.Overlay.Clear();
+            }
+            TouchAndSave(state);
+            return new { cleared = removed, agent };
+        }
+    }
+
+    public static List<CoordinatorOverlayCursor> GetActiveOverlayCursors()
+    {
+        lock (Gate)
+        {
+            var state = LoadState();
+            PruneExpiredOverlay(state);
+            SaveState(state);
+            return state.Overlay.OrderBy(c => c.Agent, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+    }
+
+    public static object ListHistory(int limit, string? agent)
+    {
+        limit = Math.Clamp(limit, 1, 200);
+        Directory.CreateDirectory(DataDir);
+        if (!File.Exists(HistoryPath))
+        {
+            return new { records = Array.Empty<CoordinatorHistoryRecord>() };
+        }
+
+        var lines = File.ReadLines(HistoryPath).Reverse();
+        var records = new List<CoordinatorHistoryRecord>();
+        foreach (var line in lines)
+        {
+            if (records.Count >= limit) break;
+            try
+            {
+                var record = JsonSerializer.Deserialize<CoordinatorHistoryRecord>(line, Options);
+                if (record == null) continue;
+                if (!string.IsNullOrWhiteSpace(agent) && !record.Agent.Equals(agent, StringComparison.OrdinalIgnoreCase)) continue;
+                records.Add(record);
+            }
+            catch
+            {
+            }
+        }
+        return new { records };
+    }
+
+    private static CoordinatorState LoadState()
+    {
+        Directory.CreateDirectory(DataDir);
+        if (!File.Exists(StatePath))
+        {
+            return new CoordinatorState();
+        }
+        try
+        {
+            return JsonSerializer.Deserialize<CoordinatorState>(File.ReadAllText(StatePath), Options) ?? new CoordinatorState();
+        }
+        catch
+        {
+            return new CoordinatorState();
+        }
+    }
+
+    private static void TouchAndSave(CoordinatorState state)
+    {
+        state.UpdatedAt = DateTimeOffset.Now;
+        SaveState(state);
+    }
+
+    private static void SaveState(CoordinatorState state)
+    {
+        Directory.CreateDirectory(DataDir);
+        File.WriteAllText(StatePath, JsonSerializer.Serialize(state, Options));
+    }
+
+    private static void AppendHistory(CoordinatorHistoryRecord record)
+    {
+        Directory.CreateDirectory(DataDir);
+        record.Ts = DateTimeOffset.Now;
+        File.AppendAllText(HistoryPath, JsonSerializer.Serialize(record, Options).Replace(Environment.NewLine, "") + Environment.NewLine);
+    }
+
+    private static string ResolveDataDir()
+    {
+        var configured = Environment.GetEnvironmentVariable("WINMOTE_DATA_DIR");
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured;
+        }
+
+        var preferred = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Winmote");
+        try
+        {
+            Directory.CreateDirectory(preferred);
+            var probe = Path.Combine(preferred, ".write-test");
+            File.WriteAllText(probe, "ok");
+            File.Delete(probe);
+            return preferred;
+        }
+        catch
+        {
+            return Path.Combine(Path.GetTempPath(), "Winmote");
+        }
+    }
+
+    private static void PruneExpiredLeases(CoordinatorState state)
+    {
+        var now = DateTimeOffset.Now;
+        state.Leases.RemoveAll(l => l.ExpiresAt <= now);
+        PruneExpiredOverlay(state);
+    }
+
+    private static void PruneExpiredOverlay(CoordinatorState state)
+    {
+        var now = DateTimeOffset.Now;
+        state.Overlay.RemoveAll(o => o.ExpiresAt <= now);
+    }
+
+    private static string NormalizeLeaseMode(string? mode)
+    {
+        mode = string.IsNullOrWhiteSpace(mode) ? "message" : mode.Trim().ToLowerInvariant();
+        return mode is "observe" or "semantic" or "message" or "physical"
+            ? mode
+            : throw new DeskCtlException("INVALID_ARGS", "mode must be observe, semantic, message, or physical");
+    }
+}
+
+public sealed class CoordinatorState
+{
+    [JsonPropertyName("sessions")] public List<CoordinatorSession> Sessions { get; set; } = new();
+    [JsonPropertyName("leases")] public List<CoordinatorLease> Leases { get; set; } = new();
+    [JsonPropertyName("overlay")] public List<CoordinatorOverlayCursor> Overlay { get; set; } = new();
+    [JsonPropertyName("updated_at")] public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.Now;
+}
+
+public sealed class CoordinatorSession
+{
+    [JsonPropertyName("session_id")] public string SessionId { get; set; } = "";
+    [JsonPropertyName("agent")] public string Agent { get; set; } = "";
+    [JsonPropertyName("name")] public string? Name { get; set; }
+    [JsonPropertyName("display")] public int Display { get; set; }
+    [JsonPropertyName("created_at")] public DateTimeOffset CreatedAt { get; set; }
+    [JsonPropertyName("last_seen_at")] public DateTimeOffset LastSeenAt { get; set; }
+}
+
+public sealed class CoordinatorLease
+{
+    [JsonPropertyName("lease_id")] public string LeaseId { get; set; } = "";
+    [JsonPropertyName("agent")] public string Agent { get; set; } = "";
+    [JsonPropertyName("resource")] public string Resource { get; set; } = "";
+    [JsonPropertyName("mode")] public string Mode { get; set; } = "message";
+    [JsonPropertyName("created_at")] public DateTimeOffset CreatedAt { get; set; }
+    [JsonPropertyName("expires_at")] public DateTimeOffset ExpiresAt { get; set; }
+}
+
+public sealed class CoordinatorOverlayCursor
+{
+    [JsonPropertyName("agent")] public string Agent { get; set; } = "";
+    [JsonPropertyName("label")] public string? Label { get; set; }
+    [JsonPropertyName("x")] public int X { get; set; }
+    [JsonPropertyName("y")] public int Y { get; set; }
+    [JsonPropertyName("display")] public int Display { get; set; }
+    [JsonPropertyName("app")] public string? App { get; set; }
+    [JsonPropertyName("window")] public string? Window { get; set; }
+    [JsonPropertyName("hwnd")] public string? Hwnd { get; set; }
+    [JsonPropertyName("pulse")] public bool Pulse { get; set; }
+    [JsonPropertyName("updated_at")] public DateTimeOffset UpdatedAt { get; set; }
+    [JsonPropertyName("expires_at")] public DateTimeOffset ExpiresAt { get; set; }
+}
+
+public sealed class CoordinatorHistoryRecord
+{
+    [JsonPropertyName("ts")] public DateTimeOffset Ts { get; set; } = DateTimeOffset.Now;
+    [JsonPropertyName("agent")] public string Agent { get; set; } = "";
+    [JsonPropertyName("action")] public string Action { get; set; } = "";
+    [JsonPropertyName("resource")] public string? Resource { get; set; }
+    [JsonPropertyName("mode")] public string? Mode { get; set; }
+    [JsonPropertyName("result")] public string Result { get; set; } = "";
+    [JsonPropertyName("details")] public object? Details { get; set; }
 }
 
 public sealed class Response
@@ -6294,6 +7343,198 @@ public static class CursorHelper
     }
 }
 
+public static class GhostCursorOverlay
+{
+    public static void ShowAt(Point screenPoint, int durationMs, bool pulse, string? label)
+    {
+        durationMs = Math.Clamp(durationMs, 60, 5000);
+        Program.RunSta(() =>
+        {
+            using var form = new GhostCursorForm(screenPoint, durationMs, pulse, label);
+            form.ShowDialog();
+            return true;
+        });
+    }
+
+    public static void ShowMany(IReadOnlyList<CoordinatorOverlayCursor> cursors, int durationMs)
+    {
+        durationMs = Math.Clamp(durationMs, 60, 10000);
+        if (cursors.Count == 0)
+        {
+            return;
+        }
+
+        Program.RunSta(() =>
+        {
+            using var form = new GhostCursorForm(cursors, durationMs);
+            form.ShowDialog();
+            return true;
+        });
+    }
+
+    private sealed class GhostCursorForm : Form
+    {
+        private readonly Point _screenPoint;
+        private readonly bool _pulse;
+        private readonly string? _label;
+        private readonly List<CoordinatorOverlayCursor>? _cursors;
+        private System.Windows.Forms.Timer _timer = null!;
+        private readonly Stopwatch _sw = Stopwatch.StartNew();
+
+        public GhostCursorForm(Point screenPoint, int durationMs, bool pulse, string? label)
+        {
+            _screenPoint = screenPoint;
+            _pulse = pulse;
+            _label = string.IsNullOrWhiteSpace(label) ? null : label.Trim();
+            _cursors = null;
+            ConfigureWindow(durationMs);
+        }
+
+        public GhostCursorForm(IReadOnlyList<CoordinatorOverlayCursor> cursors, int durationMs)
+        {
+            _screenPoint = Point.Empty;
+            _pulse = false;
+            _label = null;
+            _cursors = cursors.Select(c => new CoordinatorOverlayCursor
+            {
+                Agent = c.Agent,
+                Label = c.Label,
+                X = c.X,
+                Y = c.Y,
+                Display = c.Display,
+                App = c.App,
+                Window = c.Window,
+                Hwnd = c.Hwnd,
+                Pulse = c.Pulse,
+                UpdatedAt = c.UpdatedAt,
+                ExpiresAt = c.ExpiresAt
+            }).ToList();
+            ConfigureWindow(durationMs);
+        }
+
+        private void ConfigureWindow(int durationMs)
+        {
+            FormBorderStyle = FormBorderStyle.None;
+            ShowInTaskbar = false;
+            TopMost = true;
+            StartPosition = FormStartPosition.Manual;
+            Bounds = VirtualScreenBounds();
+            BackColor = Color.Magenta;
+            TransparencyKey = Color.Magenta;
+            DoubleBuffered = true;
+
+            _timer = new System.Windows.Forms.Timer { Interval = 16 };
+            _timer.Tick += (_, _) =>
+            {
+                if (_sw.ElapsedMilliseconds >= durationMs)
+                {
+                    Close();
+                    return;
+                }
+                Invalidate();
+            };
+        }
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                const int WS_EX_LAYERED = 0x00080000;
+                const int WS_EX_TRANSPARENT = 0x00000020;
+                const int WS_EX_TOOLWINDOW = 0x00000080;
+                var cp = base.CreateParams;
+                cp.ExStyle |= WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW;
+                return cp;
+            }
+        }
+
+        protected override bool ShowWithoutActivation => true;
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            _timer.Start();
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            _timer.Stop();
+            _timer.Dispose();
+            base.OnFormClosed(e);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            if (_cursors != null)
+            {
+                foreach (var cursor in _cursors)
+                {
+                    DrawCursor(e.Graphics, cursor.X - Bounds.X, cursor.Y - Bounds.Y, cursor.Pulse, cursor.Label ?? cursor.Agent);
+                }
+                return;
+            }
+
+            DrawCursor(e.Graphics, _screenPoint.X - Bounds.X, _screenPoint.Y - Bounds.Y, _pulse, _label);
+        }
+
+        private void DrawCursor(Graphics graphics, float x, float y, bool pulse, string? label)
+        {
+            using var fill = new SolidBrush(Color.FromArgb(230, 0, 120, 215));
+            using var outline = new Pen(Color.White, 2);
+            var cursor = new PointF[]
+            {
+                new(x, y),
+                new(x + 2, y + 25),
+                new(x + 8, y + 18),
+                new(x + 14, y + 32),
+                new(x + 20, y + 29),
+                new(x + 14, y + 16),
+                new(x + 24, y + 16)
+            };
+            graphics.FillPolygon(fill, cursor);
+            graphics.DrawPolygon(outline, cursor);
+
+            if (!string.IsNullOrWhiteSpace(label))
+            {
+                DrawLabel(graphics, x + 26, y + 10, label);
+            }
+
+            if (pulse)
+            {
+                var progress = Math.Min(1f, _sw.ElapsedMilliseconds / 260f);
+                var radius = 10 + progress * 24;
+                var alpha = (int)(170 * (1 - progress));
+                using var pulsePen = new Pen(Color.FromArgb(alpha, 0, 120, 215), 3);
+                graphics.DrawEllipse(pulsePen, x - radius, y - radius, radius * 2, radius * 2);
+            }
+        }
+
+        private static void DrawLabel(Graphics graphics, float x, float y, string label)
+        {
+            using var font = new Font("Segoe UI", 10f, FontStyle.Bold, GraphicsUnit.Point);
+            var textSize = graphics.MeasureString(label, font);
+            var rect = new RectangleF(x, y, textSize.Width + 14, textSize.Height + 8);
+            using var bg = new SolidBrush(Color.FromArgb(235, 20, 24, 31));
+            using var border = new Pen(Color.FromArgb(230, 255, 255, 255), 1);
+            using var text = new SolidBrush(Color.White);
+            graphics.FillRectangle(bg, rect);
+            graphics.DrawRectangle(border, rect.X, rect.Y, rect.Width, rect.Height);
+            graphics.DrawString(label, font, text, x + 7, y + 4);
+        }
+
+        private static Rectangle VirtualScreenBounds()
+        {
+            var left = Screen.AllScreens.Min(s => s.Bounds.Left);
+            var top = Screen.AllScreens.Min(s => s.Bounds.Top);
+            var right = Screen.AllScreens.Max(s => s.Bounds.Right);
+            var bottom = Screen.AllScreens.Max(s => s.Bounds.Bottom);
+            return Rectangle.FromLTRB(left, top, right, bottom);
+        }
+    }
+}
+
 public static class RegionSelector
 {
     public static Rect? SelectRegion()
@@ -6668,8 +7909,14 @@ public static class Native
     public const int SW_MAXIMIZE = 3;
     public const int SW_RESTORE = 9;
     public const uint WM_CLOSE = 0x0010;
+    public const uint WM_LBUTTONDOWN = 0x0201;
+    public const uint WM_LBUTTONUP = 0x0202;
+    public const uint WM_RBUTTONDOWN = 0x0204;
+    public const uint WM_RBUTTONUP = 0x0205;
     public const uint WM_SYSCOMMAND = 0x0112;
     public const uint SC_MONITORPOWER = 0xF170;
+    public const int MK_LBUTTON = 0x0001;
+    public const int MK_RBUTTON = 0x0002;
     public static readonly IntPtr HWND_BROADCAST = new(0xFFFF);
     public const uint EWX_SHUTDOWN = 0x00000001;
     public const uint EWX_REBOOT = 0x00000002;
@@ -6721,6 +7968,11 @@ public static class Native
     {
         GetCursorPos(out var pt);
         return new Point(pt.X, pt.Y);
+    }
+
+    public static IntPtr MakeLParam(int low, int high)
+    {
+        return new IntPtr((high << 16) | (low & 0xFFFF));
     }
 
     public static void SendMouse(MOUSEEVENTF flags)
@@ -7012,6 +8264,12 @@ public static class Native
 
     [DllImport("user32.dll")]
     public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr WindowFromPoint(POINT point);
+
+    [DllImport("user32.dll")]
+    public static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);

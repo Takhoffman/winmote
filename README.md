@@ -41,6 +41,25 @@ winmote keyboard type --text "hello" --enter
 winmote window list --visible-only true
 ```
 
+## Control Plane
+
+Winmote is moving toward a local Control Plane architecture. The Coordinator keeps agent sessions, resource leases, and action history so multiple agents can operate without fighting over global Windows resources.
+
+Examples:
+
+```powershell
+winmote coordinator status
+winmote session create --agent Codex --display 0
+winmote lease acquire --agent Codex --resource display:0 --mode message
+winmote action submit --agent Codex --type click --x 300 --y 400
+winmote overlay update --agent Codex --x 300 --y 400 --pulse true
+winmote overlay render --duration-ms 1200
+winmote history list --limit 20
+```
+
+`action submit` defaults to dry-run so intent can be audited before real input is sent.
+MCP calls that require an agent can omit it; Winmote defaults to `WINMOTE_AGENT`, `CODEX_AGENT_NAME`, `CODEX_SESSION_ID`, or `Codex`.
+
 ## Notes
 
 - Output is key=value lines (no JSON I/O).

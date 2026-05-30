@@ -1,0 +1,42 @@
+{
+  "name": "winmote",
+  "version": "0.1.0+codex.20260530220606",
+  "description": "Windows desktop automation tools for Codex via the Winmote MCP server.",
+  "author": {
+    "name": "Tak Hoffman",
+    "url": "https://github.com/takhoffman"
+  },
+  "homepage": "https://github.com/takhoffman/winmote",
+  "repository": "https://github.com/takhoffman/winmote",
+  "license": "MIT",
+  "keywords": [
+    "windows",
+    "desktop-automation",
+    "mcp",
+    "uia",
+    "screenshots"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Winmote",
+    "shortDescription": "Control the local Windows desktop from Codex.",
+    "longDescription": "Winmote adds MCP tools for Windows desktop automation: screenshots, UI Automation, OCR, mouse and keyboard input, window management, clipboard, taskbar, displays, notifications, and target-based UI interaction.",
+    "developerName": "Tak Hoffman",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Desktop Automation",
+      "MCP"
+    ],
+    "websiteURL": "https://github.com/takhoffman/winmote",
+    "defaultPrompt": [
+      "Inspect my active Windows desktop.",
+      "Open a browser and navigate with Winmote.",
+      "Click a numbered UI target on screen."
+    ],
+    "brandColor": "#2563EB",
+    "composerIcon": "./assets/composer-icon.png",
+    "logo": "./assets/logo.png"
+  }
+}
